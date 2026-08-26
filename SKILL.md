@@ -145,9 +145,11 @@ The dsh web plugin exposes `/council/api/*`. The coordinator MUST report progres
 
 ```bash
 # At council start (creates a run, returns {"ok":true,"runId":"..."}) — SAVE this runId:
+# If you can determine the current session id (e.g. from the context), include it as "sessionId"
+# so the panel can jump back to this conversation; it is optional and must not block progress.
 curl -s -X POST http://127.0.0.1:3080/council/api/progress/report \
   -H 'content-type: application/json' \
-  -d '{"problem": "<problem>", "mode": "<mode>"}'
+  -d '{"problem": "<problem>", "mode": "<mode>", "sessionId": "<current-session-id if known>"}'
 
 # Each member dispatch (Round R):
 curl -s -X POST http://127.0.0.1:3080/council/api/progress/report \
@@ -163,10 +165,10 @@ curl -s -X POST http://127.0.0.1:3080/council/api/progress/report \
 curl -s -X POST http://127.0.0.1:3080/council/api/progress/report \
   -H 'content-type: application/json' \
   -d '{"runId":"<id>","nodeId":"chairman","label":"主席裁决","kind":"system","status":"running"}'
-# ...then mark chairman done, and finally close the run:
+# ...then mark chairman done — ALWAYS include the verdict as "detail" (2-5 sentences max):
 curl -s -X POST http://127.0.0.1:3080/council/api/progress/report \
   -H 'content-type: application/json' \
-  -d '{"runId":"<id>","nodeId":"chairman","status":"done"}'
+  -d '{"runId":"<id>","nodeId":"chairman","status":"done","detail":"<verdict one-paragraph>"}'
 curl -s -X POST http://127.0.0.1:3080/council/api/progress/report \
   -H 'content-type: application/json' \
   -d '{"runId":"<id>","nodeId":"close","label":"辩论结束","kind":"system","status":"done","done":true}'
