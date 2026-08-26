@@ -1,0 +1,4 @@
+# dsh-council bundle layer: mount the council web API plugin.
+- insert:
+    - id: dsh-council
+      name: 'dsh-council'

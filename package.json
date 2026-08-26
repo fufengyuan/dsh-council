@@ -1,0 +1,29 @@
+{
+  "name": "dsh-council",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Council of High Intelligence for dsh web — config UI, DAG progress, council toggle",
+  "main": "dsh/index.js",
+  "license": "MIT",
+  "scripts": {},
+  "optionalDependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": {
+      "default": "./dsh/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  }
+}

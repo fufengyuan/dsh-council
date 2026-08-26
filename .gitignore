@@ -1,0 +1,18 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# dsh runtime data (never commit)
+*.log
+settings.yaml
+.DS_Store
+
+# Local config (user-specific, may contain secrets)
+.council.yaml
+
+# Editor
+.vscode/
+.idea/
+*.swp
