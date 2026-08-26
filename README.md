@@ -2,18 +2,31 @@
 
 在 dsh（DeepSeek Harness）里召集历史人物议会，对复杂问题进行多视角结构化辩论，最终由主席综合裁决。
 
+> **本项目基于 [0xNyk/council-of-high-intelligence](https://github.com/0xNyk/council-of-high-intelligence) 开发**，将其适配为 dsh 插件：技能层（SKILL.md + agents/）沿用原项目协议，新增了 dsh 专属的侧边栏入口、右侧 DAG 面板、SQLite 历史数据持久化与进度上报 API。
+
 - **18 位议会成员**：亚里士多德、苏格拉底、孙子、阿达、费曼、托瓦兹、芒格、卡尼曼、塔勒布、卡帕西等
-- **全屏 DAG 面板**：实时可视化辩论进度（议题 → 成员 → 主席），节点可点击跳转子会话
+- **右侧 DAG 面板**：实时可视化辩论进度（议题 → 成员 → 主席），节点可点击跳转子会话，不遮挡左侧导航栏
 - **多种模式**：`--quick` 快闪、`--duo` 二人对辩、`--triad` 三人组、`--full` 全员、`--members` 自选
 - **项目覆盖**：通过 `./.council.yaml` 固定每项目的默认 panel/chairman
+
+## 截图
+
+### 议会面板（右侧抽屉，不遮挡左侧导航栏）
+
+![议会面板](docs/council-panel.png)
+
+### 议会配置（设置 → 议会）
+
+![议会配置](docs/council-settings.png)
 
 ## 功能
 
 | 功能 | 说明 |
 |------|------|
 | `/council` 命令 | 启动议会辩论，自动路由 panel 与模式 |
-| 侧边栏入口 | 左侧栏底部「🏛️ 议会」按钮（任务板下方、设置上方） |
-| 全屏面板 | 议题列表（240px）+ DAG 实时进度图，支持节点点击跳转子会话 |
+| 侧边栏入口 | 左侧栏底部「🏛️ 议会」按钮，点击展开/收起右侧面板 |
+| 右侧面板 | 议题列表 + DAG 实时进度图，支持节点点击跳转子会话 |
+| 历史持久化 | SQLite 存储（`~/.dsh/council/council.sqlite`），重启不丢历史议题 |
 | 进度上报 API | `/council/api/progress/report` — 协调器通过 HTTP 上报每个成员的运行状态 |
 | 配置持久化 | `~/.dsh/council/config.json` — 成员启用/禁用、模型映射、默认 chairman |
 
@@ -55,7 +68,7 @@ git clone https://github.com/fufengyuan/dsh-council.git ~/.dsh/plugin-src/dsh-co
 /council --duo 微服务还是单体？
 ```
 
-侧边栏点「🏛️ 议会」打开全屏面板，实时查看辩论 DAG。
+侧边栏点「🏛️ 议会」展开/收起右侧面板，实时查看辩论 DAG。历史议题持久化在 `~/.dsh/council/council.sqlite`，重启服务不丢失。
 
 ## 架构
 
@@ -64,11 +77,13 @@ council/
 ├── SKILL.md              # /council 命令的协调器指令
 ├── agents/               # 18 位议会成员 persona（council-{name}.md）
 ├── configs/              # auto-route-defaults.yaml（triads/profiles/极性对）
-├── dsh/index.js          # 服务端 HTTP API（run 管理 + DAG 进度 + SSE 推送）
-├── lib/client.js         # 客户端 UI（侧边栏按钮 + 全屏面板 + DAG 渲染）
+├── dsh/index.js          # 服务端 HTTP API（run 管理 + DAG 进度 + SQLite 持久化）
+├── lib/client.js         # 客户端 UI（侧边栏按钮 + 右侧抽屉面板 + DAG 渲染）
 ├── package.json          # 插件元数据（dsh bundle/client 声明）
 └── cordis.patch.yml      # bundle patch（挂载 dsh-council 插件）
 ```
+
+数据存储：`~/.dsh/council/council.sqlite`（SQLite，WAL 模式）保存 runs / nodes / edges，配置存 `~/.dsh/council/config.json`。
 
 ## 开发
 
