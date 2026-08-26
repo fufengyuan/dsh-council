@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
+import { DatabaseSync } from 'node:sqlite';
 const require = createRequire(import.meta.url);
 let yaml;
 try {
@@ -72,40 +73,108 @@ function saveConfig(cfg) {
   writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
 }
 
-// ---- in-memory run state (single active run; last one wins) ----
-let runState = { runs: [] };
+// ---- SQLite persistence (runs / nodes / edges survive restarts) ----
+mkdirSync(CONFIG_DIR, { recursive: true });
+const DB_FILE = join(CONFIG_DIR, 'council.sqlite');
+const db = new DatabaseSync(DB_FILE);
+db.exec(`
+  PRAGMA journal_mode = WAL;
+  CREATE TABLE IF NOT EXISTS runs (
+    id TEXT PRIMARY KEY,
+    problem TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT '',
+    session_id TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running'
+  );
+  CREATE TABLE IF NOT EXISTS nodes (
+    run_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    member TEXT NOT NULL DEFAULT '',
+    round INTEGER,
+    kind TEXT NOT NULL DEFAULT 'member',
+    status TEXT NOT NULL DEFAULT 'pending',
+    detail TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, id)
+  );
+  CREATE TABLE IF NOT EXISTS edges (
+    run_id TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (run_id, from_id, to_id, label)
+  );
+`);
+const stmt = {
+  insertRun: db.prepare('INSERT INTO runs (id, problem, mode, session_id, started_at, status) VALUES (?, ?, ?, ?, ?, ?)'),
+  updateRun: db.prepare('UPDATE runs SET problem = ?, mode = ?, session_id = ?, status = ? WHERE id = ?'),
+  getRun: db.prepare('SELECT id, problem, mode, session_id, started_at, status FROM runs WHERE id = ?'),
+  listRuns: db.prepare('SELECT id, problem, mode, session_id, started_at, status FROM runs ORDER BY started_at DESC LIMIT 50'),
+  insertNode: db.prepare('INSERT OR REPLACE INTO nodes (run_id, id, label, member, round, kind, status, detail, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+  listNodes: db.prepare('SELECT id, label, member, round, kind, status, detail, at FROM nodes WHERE run_id = ?'),
+  insertEdge: db.prepare('INSERT OR IGNORE INTO edges (run_id, from_id, to_id, label) VALUES (?, ?, ?, ?)'),
+  listEdges: db.prepare('SELECT from_id, to_id, label FROM edges WHERE run_id = ?'),
+};
+
+function dbRunToApi(row) {
+  return {
+    id: row.id,
+    problem: row.problem,
+    mode: row.mode,
+    sessionId: row.session_id,
+    startedAt: row.started_at,
+    status: row.status
+  };
+}
+
+function loadRun(id) {
+  const row = stmt.getRun.get(id);
+  if (!row) return null;
+  const run = dbRunToApi(row);
+  run.nodes = stmt.listNodes.all(id).map(n => ({ ...n }));
+  run.edges = stmt.listEdges.all(id).map(e => ({ from: e.from_id, to: e.to_id, label: e.label }));
+  return run;
+}
+
 let runSeq = 0;
 
 function newRun(problem, mode, sessionId) {
   const id = `run_${Date.now()}_${++runSeq}`;
   const run = {
     id,
-    problem,
-    mode,
+    problem: problem || '',
+    mode: mode || '',
     sessionId: sessionId || '',
     startedAt: Date.now(),
     status: 'running',
     nodes: [],
     edges: []
   };
-  runState.runs.unshift(run);
-  runState.runs = runState.runs.slice(0, 10);
+  stmt.insertRun.run(run.id, run.problem, run.mode, run.sessionId, run.startedAt, run.status);
   return run;
 }
 
 function findRun(id) {
-  return runState.runs.find(r => r.id === id);
+  return loadRun(id);
+}
+
+function saveRun(run) {
+  stmt.updateRun.run(run.problem || '', run.mode || '', run.sessionId || '', run.status || 'running', run.id);
 }
 
 function addNode(run, node) {
   const existing = run.nodes.find(n => n.id === node.id);
   if (existing) Object.assign(existing, node);
   else run.nodes.push({ status: 'pending', ...node });
+  stmt.insertNode.run(run.id, node.id, node.label || node.id, node.member || '', node.round ?? null, node.kind || 'member', node.status || 'running', String(node.detail || '').slice(0, 500), node.at || Date.now());
 }
 
 function addEdge(run, from, to, label = '') {
   if (!run.edges.some(e => e.from === from && e.to === to && e.label === label)) {
     run.edges.push({ from, to, label });
+    stmt.insertEdge.run(run.id, from, to, label);
   }
 }
 
@@ -199,11 +268,12 @@ async function apply(ctx, config) {
           return json(res, 200, { ok: true, runId: run.id });
         }
         if (!run) run = newRun(body.problem || '', body.mode || '', body.sessionId || '');
-        if (body.sessionId && !run.sessionId) run.sessionId = body.sessionId;
+        if (body.sessionId && !run.sessionId) { run.sessionId = body.sessionId; saveRun(run); }
         body.runId = run.id;
         // close 模式：只标记 done，不需要 nodeId
         if (body.done === true && !body.nodeId) {
           run.status = 'done';
+          saveRun(run);
           return json(res, 200, { ok: true, runId: run.id });
         }
         if (!body.nodeId) return json(res, 400, { error: 'nodeId required', runId: run.id });
@@ -245,7 +315,7 @@ async function apply(ctx, config) {
           }
         }
         if (body.from) addEdge(run, body.from, body.nodeId, body.edgeLabel || '');
-        if (body.done === true) run.status = 'done';
+        if (body.done === true) { run.status = 'done'; saveRun(run); }
         return json(res, 200, { ok: true, runId: run.id });
       }
     });
@@ -257,7 +327,7 @@ async function apply(ctx, config) {
       handler: async (req, res) => {
         const url = new URL(req.url, 'http://localhost');
         const id = url.searchParams.get('runId');
-        const run = id ? findRun(id) : runState.runs[0];
+        const run = id ? findRun(id) : (() => { const rows = stmt.listRuns.all(); return rows.length ? loadRun(rows[0].id) : null; })();
         if (!run) return json(res, 404, { error: 'no run' });
         return json(res, 200, run);
       }
@@ -269,8 +339,12 @@ async function apply(ctx, config) {
       kind: 'exact',
       path: '/council/api/runs',
       handler: async (_req, res) => {
+        const rows = stmt.listRuns.all();
         return json(res, 200, {
-          runs: runState.runs.map(r => ({ id: r.id, problem: r.problem, mode: r.mode, status: r.status, nodes: r.nodes.length, sessionId: r.sessionId || '', startedAt: r.startedAt }))
+          runs: rows.map(r => {
+            const nodeCount = db.prepare('SELECT COUNT(*) AS c FROM nodes WHERE run_id = ?').get(r.id).c;
+            return { id: r.id, problem: r.problem, mode: r.mode, status: r.status, nodes: nodeCount, sessionId: r.session_id || '', startedAt: r.started_at };
+          })
         });
       }
     });
