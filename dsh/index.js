@@ -112,6 +112,7 @@ const stmt = {
   updateRun: db.prepare('UPDATE runs SET problem = ?, mode = ?, session_id = ?, status = ? WHERE id = ?'),
   getRun: db.prepare('SELECT id, problem, mode, session_id, started_at, status FROM runs WHERE id = ?'),
   listRuns: db.prepare('SELECT id, problem, mode, session_id, started_at, status FROM runs ORDER BY started_at DESC LIMIT 50'),
+  listRunsBySession: db.prepare('SELECT id, started_at FROM runs WHERE session_id = ? ORDER BY started_at DESC LIMIT 5'),
   insertNode: db.prepare('INSERT OR REPLACE INTO nodes (run_id, id, label, member, round, kind, status, detail, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   listNodes: db.prepare('SELECT id, label, member, round, kind, status, detail, at FROM nodes WHERE run_id = ?'),
   insertEdge: db.prepare('INSERT OR IGNORE INTO edges (run_id, from_id, to_id, label) VALUES (?, ?, ?, ?)'),
@@ -263,8 +264,16 @@ async function apply(ctx, config) {
         const body = await readBody(req);
         let run = body.runId ? findRun(body.runId) : undefined;
         if (!run && body.nodeId === undefined && (body.problem || body.mode)) {
-          // bare start: create a run without requiring a node
-          run = newRun(body.problem || '', body.mode || '', body.sessionId || '');
+          // bare start: 复用同会话下「尚无节点」的空 run（面板建议题时会先建一个空 run，
+          // 协调器再 bare start 时不应重复创建，否则用户看到的是空的那条、点击也无法跳转子会话）
+          if (body.sessionId) {
+            const cands = stmt.listRunsBySession.all(body.sessionId);
+            for (const c of cands) {
+              const cnt = db.prepare('SELECT COUNT(*) AS c FROM nodes WHERE run_id = ?').get(c.id).c;
+              if (cnt === 0) { run = findRun(c.id); break; }
+            }
+          }
+          if (!run) run = newRun(body.problem || '', body.mode || '', body.sessionId || '');
           return json(res, 200, { ok: true, runId: run.id });
         }
         if (!run) run = newRun(body.problem || '', body.mode || '', body.sessionId || '');
