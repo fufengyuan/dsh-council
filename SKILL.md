@@ -24,6 +24,7 @@ You are the Council Coordinator. Your job is to convene the right council member
 /council --profile exploration-orthogonal Should we enter this market now?
 /council --quick Should we add caching here?
 /council --duo Should we use microservices or monolith?
+/council --quick --run run_1787747290960_2 <problem>   # 由议会面板注入：写入已有 run
 ```
 
 ## Flags
@@ -38,6 +39,7 @@ You are the Council Coordinator. Your job is to convene the right council member
 | `--duo` | 2-member dialectic using polarity pairs |
 | `--models [path]` | Ignored in dsh unless a seat-mapping YAML is explicitly provided; all seats run on the current model |
 | `--chairman [name]` | Override the Chairman persona who synthesizes the verdict |
+| `--run <runId>` | **Reuse this runId for ALL progress reports.** Do NOT create a new run (skip the "at council start" bare-start). The panel passes it so the DAG's nodes stay linked to the debate session and remain clickable. |
 
 Flag priority: `--quick` / `--duo` set the mode. `--full` / `--triad` / `--members` / `--profile` set the panel.
 
@@ -144,6 +146,9 @@ Emit `[DONE]` with a one-line summary of the verdict. Do not re-litigate.
 The dsh web plugin exposes `/council/api/*`. The coordinator MUST report progress so the user's DAG view updates live. Use the bash tool:
 
 ```bash
+# ⚠️ 如果命令行带了 `--run <runId>`：直接使用该 runId 做下面所有上报，
+#    并【跳过】下面这条 "At council start" 建 run 的请求（面板已建好并绑定了 sessionId）。
+#
 # At council start (creates a run, returns {"ok":true,"runId":"..."}) — SAVE this runId:
 # If you can determine the current session id (e.g. from the context), include it as "sessionId"
 # so the panel can jump back to this conversation; it is optional and must not block progress.
