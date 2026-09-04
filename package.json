@@ -2,10 +2,14 @@
   "name": "dsh-council",
   "version": "1.0.0",
   "type": "module",
-  "description": "Council of High Intelligence for dsh web — config UI, DAG progress, council toggle",
+  "description": "Council of High Intelligence for dsh web — multi-perspective debate with live DAG panel",
   "main": "dsh/index.js",
   "license": "MIT",
   "scripts": {},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1-rc.1 || ^4.0.1",
+    "@deepseek-ai/dsh-web-app": "^0.1.0-rc.1 || >=0.1.0-rc.0 <0.2.0"
+  },
   "optionalDependencies": {
     "js-yaml": "^4.1.0"
   },
